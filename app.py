@@ -4,6 +4,7 @@ The sun rules the day, the moon rules the night.
 The moon is shared by everyone on Earth; the sun is your own.
 """
 from pathlib import Path
+import time
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -31,10 +32,15 @@ st.markdown(
 )
 
 face = (Path(__file__).parent / "face.html").read_text(encoding="utf-8")
-components.html(face, height=760, scrolling=False)
+# Hand the face this server's clock (synced to atomic time) so phones with drifting clocks stay exact.
+face = face.replace("__SERVER_MS__", str(int(time.time() * 1000)))
+components.html(face, height=880, scrolling=False)
 
 s = moon_state()
 with st.expander("The numbers behind the face"):
+    h, m, sec = s["moon_hms"]
+    st.write(f"**Twolight time:** moon-day {s['moon_day']:02d}, {h:02d}:{m:02d}:{sec:02d} "
+             f"(year {s['year']} of 19, moon {s['metonic_moon']} of 235)")
     st.write(f"**Phase:** {s['phase_name']} — {s['illumination'] * 100:.0f}% lit")
     st.write(f"**Day of this moon:** {s['age_days']:.1f} of 29.5")
     st.write(f"**Moon in the 19-year wheel:** {s['metonic_moon']} of 235 (year {s['metonic_year']} of 19)")

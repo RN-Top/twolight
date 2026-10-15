@@ -7,7 +7,8 @@ This one file holds everything: the moon engine, the clock face, and the page.
 
 Moon time: each moon has 30 moon-days (the moon gaining 12 degrees on the sun,
 like the ancient tithi), and each moon-day has 24 moon-hours of 60 moon-minutes
-of 60 moon-seconds. Sun and moon positions follow Meeus, Astronomical Algorithms.
+of 60 moon-seconds, shown as a 12-hour clock: GL (Greater Light) for the
+first half of each moon-day, LL (Lesser Light) for the second. Sun and moon positions follow Meeus, Astronomical Algorithms.
 """
 from datetime import datetime, timezone
 import math
@@ -144,6 +145,8 @@ FACE_HTML = r'''<!-- Twolight clock face.
   .num.sec { color: #DDEFF5; }
   .num.day { color: var(--sun); text-shadow: 0 0 14px rgba(242,177,74,.45); }
   .gap { width: 14px; }
+  .half { margin-left: 4px; }
+  .num.halfmark { font-size: clamp(16px, 5vw, 24px); color: var(--sun); text-shadow: 0 0 10px rgba(242,177,74,.45); padding-bottom: 4px; }
   .wheelrow { font-size: 13px; color: var(--glass); opacity: .8; margin-top: 8px; text-align: center; letter-spacing: .03em; }
   .lab { font-size: 11px; font-weight: 400; color: var(--glass); opacity: .75; margin-top: 6px; letter-spacing: .04em; }
   .sep { font-family: 'Chakra Petch', monospace; font-size: clamp(20px, 6vw, 32px); color: var(--glass); opacity: .45; padding-bottom: 20px; }
@@ -160,6 +163,7 @@ FACE_HTML = r'''<!-- Twolight clock face.
     <div class="unit"><div class="num" id="dMi">--</div><div class="lab">minutes</div></div>
     <div class="sep">:</div>
     <div class="unit"><div class="num sec" id="dS">--</div><div class="lab">seconds</div></div>
+    <div class="unit half"><div class="num halfmark" id="dHalf">--</div><div class="lab" id="dHalfLab">half</div></div>
   </div>
   <div class="sync" id="sync"></div>
   <div class="line" id="line"></div>
@@ -411,6 +415,7 @@ FACE_HTML = r'''<!-- Twolight clock face.
   // Moon time: each moon is split into 30 moon-days (like the ancient tithi).
   // Each moon-day is split into 24 moon-hours, 60 moon-minutes, 60 moon-seconds.
   // A moon-day is the moon gaining 12 degrees on the sun, so its length follows the real moon.
+  const dHalf = document.getElementById('dHalf'), dHalfLab = document.getElementById('dHalfLab');
   const dH = document.getElementById('dH'), dMi = document.getElementById('dMi'),
         dS = document.getElementById('dS'), wheel = document.getElementById('wheel');
   function twolightTime(ms) {
@@ -428,7 +433,11 @@ FACE_HTML = r'''<!-- Twolight clock face.
   function tickDigital() {
     const tt = twolightTime(TEST ? new Date(TEST).getTime() : Date.now() + OFFSET);
     dD.textContent = pad(tt.day, 2);
-    dH.textContent = pad(tt.h, 2);
+    // 12-hour moon clock: GL = Greater Light (first half), LL = Lesser Light (second half)
+    const firstHalf = tt.h < 12;
+    dH.textContent = pad(tt.h % 12 === 0 ? 12 : tt.h % 12, 2);
+    dHalf.textContent = firstHalf ? 'GL' : 'LL';
+    dHalfLab.textContent = firstHalf ? 'greater light' : 'lesser light';
     dMi.textContent = pad(tt.m, 2);
     dS.textContent = pad(tt.s, 2);
     const w = `year ${tt.year} of 19, moon ${tt.moon} of 235`;
@@ -440,11 +449,14 @@ FACE_HTML = r'''<!-- Twolight clock face.
   function frame(t) {
     const now = TEST ? new Date(TEST) : new Date(Date.now() + OFFSET);
     const m = moon(now.getTime());
-    const h = sunHeight(now);
+    // Light follows the moon-day: it rises through GL (greater light), peaks mid-GL,
+    // fades at the turn, and is darkest mid-LL (lesser light). Same for everyone.
+    const mdFrac = ((moonCount(now.getTime()).el / 12) % 1 + 1) % 1;   // 0..1 through the moon-day
+    const h = Math.sin(2 * Math.PI * mdFrac);                          // 1 brightest, -1 darkest
     drawSky(h, t);
     drawMetonic(m.met);
     drawPhaseRing(m.cycle);
-    drawSun(dayFrac(now), h);
+    drawSun((mdFrac + 0.25) % 1, h);   // the light rides the top of the ring through GL
     drawMoon(m.cycle, m.lit);
     const year = Math.floor(m.met * 19) + 1;
     const text = `${m.name}, ${Math.round(m.lit * 100)}% lit`;
@@ -473,7 +485,7 @@ st.markdown(
       p.tag { color: #9CC3D3; opacity: .75; text-align: center; font-weight: 300; margin: 0 0 .6rem 0; }
     </style>
     <h1 class="title">Twolight</h1>
-    <p class="tag">One moon over the whole world. Your own sun where you stand.</p>
+    <p class="tag">One moon over the whole world. One light, shared by everyone.</p>
     """,
     unsafe_allow_html=True,
 )
@@ -486,13 +498,15 @@ components.html(face, height=880, scrolling=False)
 s = moon_state()
 with st.expander("The numbers behind the face"):
     h, m, sec = s["moon_hms"]
-    st.write(f"**Twolight time:** moon-day {s['moon_day']:02d}, {h:02d}:{m:02d}:{sec:02d} "
+    half = "GL" if h < 12 else "LL"
+    h12 = h % 12 or 12
+    st.write(f"**Twolight time:** moon-day {s['moon_day']:02d}, {h12:02d}:{m:02d}:{sec:02d} {half} "
              f"(year {s['year']} of 19, moon {s['metonic_moon']} of 235)")
     st.write(f"**Phase:** {s['phase_name']} — {s['illumination'] * 100:.0f}% lit")
     st.write(f"**Moon's angle ahead of the sun:** {s['elongation']:.2f}°")
     st.write(f"**Shared moment (UTC):** {s['utc']:%Y-%m-%d %H:%M}")
     st.caption(
         "The moon's phase is the same everywhere on Earth at once — that is the shared layer. "
-        "The sun on the outer ring follows your own day: allow location for your true sun, "
-        "otherwise it follows your device clock."
+        "The light on the face and the sun on the outer ring follow the moon-day: "
+        "brightening through GL (greater light), darkening through LL (lesser light)."
     )
